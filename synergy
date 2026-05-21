@@ -16,9 +16,9 @@ USAGE = """\
 synergy — AI SysAdmin layer for Debian/Ubuntu (local-first, no cloud)
 
 Usage:
-  synergy status [--model <name>]             AI health summary of the system
-  synergy explain <service> [--model <name>]  Explain what's happening with a service
-  synergy diagnose <service> [--model <name>] Alias for 'explain'
+  synergy status [--model <name>] [--verbose]             AI health summary of the system
+  synergy explain <service> [--model <name>] [--verbose]  Explain what's happening with a service
+  synergy diagnose <service> [--model <name>] [--verbose] Alias for 'explain'
 
 Examples:
   synergy status
@@ -34,8 +34,18 @@ Ollama endpoint: {url}  (override with SYNERGY_HOST env var)
 """.format(model=MODEL, url=OLLAMA_URL)
 
 
-def run(cmd):
+VERBOSE = False
+
+
+def vprint(msg):
+    if VERBOSE:
+        print(f"  \033[2m{msg}\033[0m", flush=True)
+
+
+def run(cmd, label=None):
     """Run a read-only system command and return its stdout."""
+    if label:
+        vprint(f"[recolectando] {label}...")
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout
     except Exception as e:
@@ -44,13 +54,17 @@ def run(cmd):
 
 def ask_ollama(prompt, model):
     """Send prompt to local model. No cloud, no API keys."""
+    vprint(f"[prompt] {len(prompt)} caracteres → {OLLAMA_URL}")
+    vprint(f"[modelo] {model} — esperando respuesta...")
     data = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
     req = urllib.request.Request(
         OLLAMA_URL, data=data, headers={"Content-Type": "application/json"}
     )
     try:
         with urllib.request.urlopen(req, timeout=600) as r:
-            return json.loads(r.read())["response"].strip()
+            response = json.loads(r.read())
+            vprint(f"[listo] {response.get('eval_count', '?')} tokens generados")
+            return response["response"].strip()
     except Exception as e:
         return (
             f"No pude contactar a Ollama en {OLLAMA_URL}.\n"
@@ -64,12 +78,13 @@ def ask_ollama(prompt, model):
 def collect_state():
     """Collect real system state (read-only)."""
     return {
-        "disco":              run(["df", "-h", "/"]),
-        "memoria":            run(["free", "-h"]),
-        "carga":              run(["uptime"]),
-        "servicios_fallidos": run(["systemctl", "--failed", "--no-legend"]),
+        "disco":              run(["df", "-h", "/"], "disco"),
+        "memoria":            run(["free", "-h"], "memoria"),
+        "carga":              run(["uptime"], "carga del sistema"),
+        "servicios_fallidos": run(["systemctl", "--failed", "--no-legend"], "servicios fallidos"),
         "errores_recientes":  run(
-            ["journalctl", "-p", "err", "-n", "30", "--no-pager", "-o", "short"]
+            ["journalctl", "-p", "err", "-n", "30", "--no-pager", "-o", "short"],
+            "errores recientes (journalctl)"
         ),
     }
 
@@ -103,7 +118,10 @@ def cmd_explain(service, model):
             "Ejemplo:  synergy explain nginx"
         )
         sys.exit(1)
-    logs = run(["journalctl", "-u", service, "-n", "40", "--no-pager", "-o", "short"])
+    logs = run(
+        ["journalctl", "-u", service, "-n", "40", "--no-pager", "-o", "short"],
+        f"journalctl -u {service}"
+    )
     prompt = f"""Eres un administrador de sistemas Linux senior. Explica en español, claro y
 breve, qué está pasando con el servicio '{service}' según estos logs reales. Si hay un
 error, di la causa probable y cómo resolverlo. No inventes nada fuera de los logs.
@@ -116,7 +134,8 @@ error, di la causa probable y cómo resolverlo. No inventes nada fuera de los lo
 
 
 def parse_args(args):
-    """Extract --model flag from anywhere in argv; return remaining tokens."""
+    """Extract --model and --verbose flags from anywhere in argv."""
+    global VERBOSE
     model = MODEL
     remaining = []
     i = 0
@@ -124,6 +143,9 @@ def parse_args(args):
         if args[i] == "--model" and i + 1 < len(args):
             model = args[i + 1]
             i += 2
+        elif args[i] in ("--verbose", "-v"):
+            VERBOSE = True
+            i += 1
         else:
             remaining.append(args[i])
             i += 1
