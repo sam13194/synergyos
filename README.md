@@ -61,6 +61,62 @@ if you prefer another language).
 
 ---
 
+## Real-world test
+
+Tested on a VirtualBox VM — **no GPU, CPU-only inference**:
+
+- OS: Debian 13 (bookworm)
+- CPU: 4 cores (host: Intel)
+- RAM: 11 GB
+- GPU: none
+
+| Model | Mode | Prompt size | Time | Quality |
+|---|---|---|---|---|
+| qwen2.5:0.5b | `--fast` | 849 chars | ~1.5 min | ❌ hallucinations, dangerous suggestions |
+| llama3.1:8b | normal | 2366 chars | ~10 min | ✅ accurate |
+| llama3.1:8b | `--fast` | 705 chars | ~6 min | ✅ accurate |
+
+**Verdict**: `llama3.1:8b --fast` is the sweet spot for CPU-only servers.
+Model size matters more than prompt size for this use case — do not go below 7-8B parameters.
+
+### Sample output (`llama3.1:8b --fast`)
+
+Real system state fed to the model:
+```
+disk: /dev/sda1 19G used 15G (82%)
+RAM:  11Gi total, 6.6Gi used, 531Mi free
+load: 1.70, 4.63, 3.73
+failed services: none
+journal errors: sudo pam_unix auth failed for vboxuser (x2)
+```
+
+Model response (in Spanish, as prompted):
+```
+Salud: Todo parece estar en orden.
+
+Alertas reales:
+- El disco /dev/sda1 está a 81% de uso y puede ser necesario expandir el espacio.
+- El proceso "sudo" ha tenido un error de autenticación para vboxuser,
+  lo que puede indicar problemas de seguridad o configuración con PAM.
+
+Acciones:
+- Verificar y ajustar el tamaño del disco /dev/sda1 según sea necesario.
+- Investigar y solucionar los errores de autenticación para vboxuser.
+```
+
+Disk alert and sudo error detected correctly from real `journalctl` output.
+RAM pressure (531 Mi free) was missed — known limitation of `--fast` compressed prompt.
+
+### Recommended setup for CPU-only servers
+
+```bash
+# run in background every 15 minutes, read the report when you want
+*/15 * * * * synergy status --fast --model llama3.1:8b >> /var/log/synergy.log 2>&1
+tail -60 /var/log/synergy.log
+```
+
+---
+
 ## Principles
 
 - **Local-first** — works without internet or cloud APIs. Cloud is optional, never required.
