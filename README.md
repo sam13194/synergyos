@@ -90,12 +90,15 @@ just SSH access.
 ```
 
 This is the planned architecture for the next phase. The current version analyzes
-the local machine only. The goal: the AI node SSHes into each server, collects state
-(df, free, systemctl, journalctl — read-only), and analyzes it locally with Ollama.
-Nothing leaves your network, nothing needs to be installed on managed servers.
+the local machine only.
 
-When `--host` support lands, setup will require only SSH key access from the AI node
-to each managed server — no agent, no daemon, no open ports on the managed side.
+The key insight: `df`, `free`, `systemctl`, and `journalctl` are already installed
+on every Debian/Ubuntu server — they're part of the base OS. The AI node will run
+them remotely via SSH and analyze the output locally with Ollama.
+
+**Only the AI node needs synergy + Ollama.** Managed servers need nothing installed —
+just SSH enabled, which every Linux server already has. One 8 GB node monitors
+your entire fleet.
 
 ---
 
