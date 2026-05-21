@@ -74,65 +74,66 @@ if you prefer another language).
 
 ## Multi-server setup
 
-For teams running multiple servers, SynergyOS can work in a hub-and-spoke model:
-one **dedicated AI node** (8 GB RAM) runs Ollama and serves the entire fleet.
-Each managed server sends its state there for analysis — logs never leave your network.
+For teams running multiple servers, SynergyOS works in a hub-and-spoke model:
+one **dedicated AI node** (8 GB RAM) runs Ollama and connects to the rest of the fleet
+via SSH to collect their state in real time. Managed servers need **nothing installed** —
+just SSH access.
 
 ```
-                        ┌─────────────────────────────┐
-[web server]   ──────►  │  AI node (192.168.1.10)     │
-[db server]    ──────►  │  Ollama + llama3.1:8b        │
-[ci server]    ──────►  │  8 GB RAM, always-on         │
-[backup server]──────►  └─────────────────────────────┘
-                                      ▲
-                             you SSH here to query
+┌─────────────────────────────┐
+│  AI node (192.168.1.10)     │──SSH──► [web server]
+│  synergy + Ollama           │──SSH──► [db server]
+│  8 GB RAM, always-on        │──SSH──► [ci server]
+└─────────────────────────────┘──SSH──► [backup server]
+             ▲
+    you query this node
 ```
 
-### Step 1 — Configure the AI node
+The AI node SSHes into each server, reads its state (df, free, systemctl, journalctl —
+all read-only), and runs the analysis locally with Ollama. No data leaves your network,
+no agent installed on managed servers.
 
-The AI node is just a Linux server with Ollama exposed on the local network.
+### Step 1 — Set up the AI node
 
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull the model (do this once)
 ollama pull llama3.1:8b
 
-# By default Ollama only listens on localhost.
-# To accept connections from other servers on the LAN:
-echo 'OLLAMA_HOST=0.0.0.0:11434' | sudo tee -a /etc/environment
-sudo systemctl restart ollama   # or: ollama serve
-
-# Install synergy on the AI node too (optional, for local queries)
-chmod +x synergy
-sudo cp synergy /usr/local/bin/synergy
-```
-
-> **Security note:** expose port 11434 only within your LAN or VPN.
-> There is no authentication on the Ollama API — don't expose it to the internet.
-
-### Step 2 — Configure each managed server
-
-Each managed server needs only the `synergy` script and the `SYNERGY_HOST` variable
-pointing to the AI node. Ollama is **not** required on managed servers.
-
-```bash
 # Install synergy
 chmod +x synergy
 sudo cp synergy /usr/local/bin/synergy
-
-# Point to the AI node permanently
-echo 'SYNERGY_HOST=192.168.1.10:11434' | sudo tee -a /etc/environment
-source /etc/environment
-
-# Verify it works
-synergy status
-synergy explain nginx
 ```
 
-From this point, all AI processing happens on the AI node.
-The managed server only collects local state (df, free, journalctl) and sends the text prompt.
+### Step 2 — Grant SSH access from the AI node to each managed server
+
+On the AI node, generate a key pair (if you don't have one):
+
+```bash
+ssh-keygen -t ed25519 -C "synergy-ai-node"
+```
+
+Then copy the public key to each managed server:
+
+```bash
+ssh-copy-id user@web-server
+ssh-copy-id user@db-server
+ssh-copy-id user@ci-server
+```
+
+### Step 3 — Query any server from the AI node
+
+```bash
+# Check health of a remote server
+synergy status --host web-server
+
+# Explain a service running on a remote server
+synergy explain nginx --host db-server
+synergy diagnose postgresql --host db-server
+```
+
+> `--host` support is on the roadmap. Current version analyzes the local machine.
+> SSH-based remote collection is the next planned feature.
 
 ---
 
@@ -143,7 +144,8 @@ The managed server only collects local state (df, free, journalctl) and sends th
 - [ ] `synergy security scan` — SSH attempts, SSL expiry, open ports, firewall posture
 - [ ] `synergy check backups` — detect stale or absent backup jobs
 - [ ] `synergy watch` — continuous monitoring with threshold-based alerts
-- [ ] `synergy report` — send structured JSON state to a central AI node
+- [ ] `synergy status --host <server>` — collect state via SSH, analyze on AI node
+- [ ] `synergy explain <service> --host <server>` — remote log explanation
 - [ ] Web dashboard on the AI node — per-server status, alert history, model activity
 - [ ] Permission layers (read-only → safe-ops → admin) + append-only audit ledger
 - [ ] Config file (`~/.config/synergy.toml`) for model, language, thresholds
