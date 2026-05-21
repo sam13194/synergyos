@@ -128,8 +128,10 @@ sugeridas numeradas. No inventes datos que no estén abajo.
 === ERRORES RECIENTES (journalctl) ===
 {s['errores_recientes'] or 'ninguno'}
 """
-    mode = " [modo rápido]" if FAST else ""
-    print(f"Analizando estado del sistema con modelo '{model}'{mode}...\n")
+    mode = "rápido (--fast): 10 líneas, última hora" if FAST else "completo: 30 líneas"
+    vprint(f"[modo] {mode}")
+    label = " [modo rápido]" if FAST else ""
+    print(f"Analizando estado del sistema con modelo '{model}'{label}...\n")
     print(ask_ollama(prompt, model))
 
 
@@ -157,7 +159,7 @@ error, di la causa probable y cómo resolverlo. No inventes nada fuera de los lo
 
 def parse_args(args):
     """Extract --model and --verbose flags from anywhere in argv."""
-    global VERBOSE
+    global VERBOSE, FAST
     model = MODEL
     remaining = []
     i = 0
