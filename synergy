@@ -2,13 +2,15 @@
 """synergy — AI SysAdmin layer for Debian/Ubuntu.
 Local-first. Reads real system state, explains it in plain language via Ollama.
 """
+import os
 import subprocess
 import sys
 import json
 import urllib.request
 
-MODEL = "llama3.1:8b"   # override with --model: 'qwen2.5:7b', 'mistral', etc.
-OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL       = "llama3.1:8b"   # override with --model: 'qwen2.5:7b', 'mistral', etc.
+OLLAMA_HOST = os.environ.get("SYNERGY_HOST", "localhost:11434")
+OLLAMA_URL  = f"http://{OLLAMA_HOST}/api/generate"
 
 USAGE = """\
 synergy — AI SysAdmin layer for Debian/Ubuntu (local-first, no cloud)
@@ -24,8 +26,11 @@ Examples:
   synergy explain sshd --model qwen2.5:7b
   synergy diagnose postgresql
 
+  # Point to a remote AI node instead of localhost:
+  SYNERGY_HOST=192.168.1.10:11434 synergy status
+
 Default model : {model}
-Ollama endpoint: {url}
+Ollama endpoint: {url}  (override with SYNERGY_HOST env var)
 """.format(model=MODEL, url=OLLAMA_URL)
 
 

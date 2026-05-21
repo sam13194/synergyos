@@ -51,6 +51,10 @@ synergy diagnose postgresql
 # Use a different local model
 synergy status --model qwen2.5:7b
 synergy explain docker --model mistral
+
+# Point to a remote AI node (multi-server setup)
+SYNERGY_HOST=192.168.1.10:11434 synergy status
+SYNERGY_HOST=192.168.1.10:11434 synergy explain nginx
 ```
 
 The script reads **real** system state via `df`, `free`, `uptime`, `systemctl`, and
@@ -71,6 +75,35 @@ if you prefer another language).
 
 ---
 
+## Multi-server setup
+
+SynergyOS is designed to scale beyond a single machine. The intended architecture
+for a small infrastructure is one **dedicated AI node** (8 GB RAM, runs Ollama) that
+serves the rest of the fleet:
+
+```
+[web server]  ──┐
+[db server]   ──┼──→  AI node (Ollama + synergy)  ←── you SSH here to query
+[ci server]   ──┘
+```
+
+Each server runs `synergy` pointing to the AI node via `SYNERGY_HOST`:
+
+```bash
+# on each managed server
+export SYNERGY_HOST=192.168.1.10:11434
+synergy status        # analysis runs on the AI node, logs never leave your network
+synergy explain nginx
+```
+
+Or add it to `/etc/environment` so it's always set. No cloud, no API keys —
+the AI node is just another server on your LAN.
+
+A web dashboard for the AI node (status history, per-server alerts, model activity)
+is on the roadmap.
+
+---
+
 ## Roadmap
 
 - [x] `synergy status` — AI health summary (disk, RAM, load, failed services, errors)
@@ -78,6 +111,8 @@ if you prefer another language).
 - [ ] `synergy security scan` — SSH attempts, SSL expiry, open ports, firewall posture
 - [ ] `synergy check backups` — detect stale or absent backup jobs
 - [ ] `synergy watch` — continuous monitoring with threshold-based alerts
+- [ ] `synergy report` — send structured JSON state to a central AI node
+- [ ] Web dashboard on the AI node — per-server status, alert history, model activity
 - [ ] Permission layers (read-only → safe-ops → admin) + append-only audit ledger
 - [ ] Config file (`~/.config/synergy.toml`) for model, language, thresholds
 
