@@ -62,21 +62,50 @@ def run(cmd, label=None):
 def ask_ollama(prompt, model):
     """Send prompt to local model. No cloud, no API keys."""
     vprint(f"[prompt] {len(prompt)} caracteres → {OLLAMA_URL}")
-    data = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
+    stream = VERBOSE
+    data = json.dumps({"model": model, "prompt": prompt, "stream": stream}).encode()
     req = urllib.request.Request(
         OLLAMA_URL, data=data, headers={"Content-Type": "application/json"}
     )
     try:
         t_start = time.time()
-        vprint(f"[inicio] {time.strftime('%H:%M:%S')} — esperando respuesta...")
+        vprint(f"[inicio] {time.strftime('%H:%M:%S')} — generando respuesta...\n")
         with urllib.request.urlopen(req, timeout=600) as r:
-            response = json.loads(r.read())
-        t_end = time.time()
-        elapsed = t_end - t_start
-        mins, secs = divmod(int(elapsed), 60)
-        vprint(f"[fin]    {time.strftime('%H:%M:%S')} — {response.get('eval_count', '?')} tokens generados")
-        vprint(f"[tiempo] {mins}m {secs}s")
-        return response["response"].strip()
+            if stream:
+                full = ""
+                eval_count = 0
+                in_think = False
+                for raw in r:
+                    chunk = json.loads(raw.decode())
+                    token = chunk.get("response", "")
+                    full += token
+
+                    # detectar bloque <think> de modelos de razonamiento
+                    if "<think>" in token:
+                        in_think = True
+                    if in_think:
+                        # mostrar pensamiento en gris/dim
+                        print(f"\033[2m{token}\033[0m", end="", flush=True)
+                    else:
+                        print(token, end="", flush=True)
+                    if "</think>" in token:
+                        in_think = False
+
+                    if chunk.get("done"):
+                        eval_count = chunk.get("eval_count", 0)
+                        break
+
+                print()
+                t_end = time.time()
+                mins, secs = divmod(int(t_end - t_start), 60)
+                vprint(f"\n[fin]    {time.strftime('%H:%M:%S')} — {eval_count} tokens generados")
+                vprint(f"[tiempo] {mins}m {secs}s")
+                return None  # ya imprimimos en tiempo real
+            else:
+                response = json.loads(r.read())
+                t_end = time.time()
+                mins, secs = divmod(int(t_end - t_start), 60)
+                return response["response"].strip()
     except Exception as e:
         return (
             f"No pude contactar a Ollama en {OLLAMA_URL}.\n"
@@ -138,7 +167,9 @@ sugeridas numeradas. No inventes datos que no estén abajo.
     vprint(f"[modo] {mode}")
     label = " [modo rápido]" if FAST else ""
     print(f"Analizando estado del sistema con modelo '{model}'{label}...\n")
-    print(ask_ollama(prompt, model))
+    result = ask_ollama(prompt, model)
+    if result:
+        print(result)
 
 
 def cmd_explain(service, model):
@@ -160,7 +191,9 @@ error, di la causa probable y cómo resolverlo. No inventes nada fuera de los lo
 {logs}
 """
     print(f"Explicando el servicio '{service}' con modelo '{model}'...\n")
-    print(ask_ollama(prompt, model))
+    result = ask_ollama(prompt, model)
+    if result:
+        print(result)
 
 
 def parse_args(args):
