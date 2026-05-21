@@ -52,9 +52,6 @@ synergy diagnose postgresql
 synergy status --model qwen2.5:7b
 synergy explain docker --model mistral
 
-# Point to a remote AI node (multi-server setup)
-SYNERGY_HOST=192.168.1.10:11434 synergy status
-SYNERGY_HOST=192.168.1.10:11434 synergy explain nginx
 ```
 
 The script reads **real** system state via `df`, `free`, `uptime`, `systemctl`, and
@@ -77,30 +74,65 @@ if you prefer another language).
 
 ## Multi-server setup
 
-SynergyOS is designed to scale beyond a single machine. The intended architecture
-for a small infrastructure is one **dedicated AI node** (8 GB RAM, runs Ollama) that
-serves the rest of the fleet:
+For teams running multiple servers, SynergyOS can work in a hub-and-spoke model:
+one **dedicated AI node** (8 GB RAM) runs Ollama and serves the entire fleet.
+Each managed server sends its state there for analysis — logs never leave your network.
 
 ```
-[web server]  ──┐
-[db server]   ──┼──→  AI node (Ollama + synergy)  ←── you SSH here to query
-[ci server]   ──┘
+                        ┌─────────────────────────────┐
+[web server]   ──────►  │  AI node (192.168.1.10)     │
+[db server]    ──────►  │  Ollama + llama3.1:8b        │
+[ci server]    ──────►  │  8 GB RAM, always-on         │
+[backup server]──────►  └─────────────────────────────┘
+                                      ▲
+                             you SSH here to query
 ```
 
-Each server runs `synergy` pointing to the AI node via `SYNERGY_HOST`:
+### Step 1 — Configure the AI node
+
+The AI node is just a Linux server with Ollama exposed on the local network.
 
 ```bash
-# on each managed server
-export SYNERGY_HOST=192.168.1.10:11434
-synergy status        # analysis runs on the AI node, logs never leave your network
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull the model (do this once)
+ollama pull llama3.1:8b
+
+# By default Ollama only listens on localhost.
+# To accept connections from other servers on the LAN:
+echo 'OLLAMA_HOST=0.0.0.0:11434' | sudo tee -a /etc/environment
+sudo systemctl restart ollama   # or: ollama serve
+
+# Install synergy on the AI node too (optional, for local queries)
+chmod +x synergy
+sudo cp synergy /usr/local/bin/synergy
+```
+
+> **Security note:** expose port 11434 only within your LAN or VPN.
+> There is no authentication on the Ollama API — don't expose it to the internet.
+
+### Step 2 — Configure each managed server
+
+Each managed server needs only the `synergy` script and the `SYNERGY_HOST` variable
+pointing to the AI node. Ollama is **not** required on managed servers.
+
+```bash
+# Install synergy
+chmod +x synergy
+sudo cp synergy /usr/local/bin/synergy
+
+# Point to the AI node permanently
+echo 'SYNERGY_HOST=192.168.1.10:11434' | sudo tee -a /etc/environment
+source /etc/environment
+
+# Verify it works
+synergy status
 synergy explain nginx
 ```
 
-Or add it to `/etc/environment` so it's always set. No cloud, no API keys —
-the AI node is just another server on your LAN.
-
-A web dashboard for the AI node (status history, per-server alerts, model activity)
-is on the roadmap.
+From this point, all AI processing happens on the AI node.
+The managed server only collects local state (df, free, journalctl) and sends the text prompt.
 
 ---
 
