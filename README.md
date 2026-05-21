@@ -89,51 +89,13 @@ just SSH access.
     you query this node
 ```
 
-The AI node SSHes into each server, reads its state (df, free, systemctl, journalctl —
-all read-only), and runs the analysis locally with Ollama. No data leaves your network,
-no agent installed on managed servers.
+This is the planned architecture for the next phase. The current version analyzes
+the local machine only. The goal: the AI node SSHes into each server, collects state
+(df, free, systemctl, journalctl — read-only), and analyzes it locally with Ollama.
+Nothing leaves your network, nothing needs to be installed on managed servers.
 
-### Step 1 — Set up the AI node
-
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.1:8b
-
-# Install synergy
-chmod +x synergy
-sudo cp synergy /usr/local/bin/synergy
-```
-
-### Step 2 — Grant SSH access from the AI node to each managed server
-
-On the AI node, generate a key pair (if you don't have one):
-
-```bash
-ssh-keygen -t ed25519 -C "synergy-ai-node"
-```
-
-Then copy the public key to each managed server:
-
-```bash
-ssh-copy-id user@web-server
-ssh-copy-id user@db-server
-ssh-copy-id user@ci-server
-```
-
-### Step 3 — Query any server from the AI node
-
-```bash
-# Check health of a remote server
-synergy status --host web-server
-
-# Explain a service running on a remote server
-synergy explain nginx --host db-server
-synergy diagnose postgresql --host db-server
-```
-
-> `--host` support is on the roadmap. Current version analyzes the local machine.
-> SSH-based remote collection is the next planned feature.
+When `--host` support lands, setup will require only SSH key access from the AI node
+to each managed server — no agent, no daemon, no open ports on the managed side.
 
 ---
 
