@@ -16,9 +16,14 @@ USAGE = """\
 synergy — AI SysAdmin layer for Debian/Ubuntu (local-first, no cloud)
 
 Usage:
-  synergy status [--model <name>] [--verbose]             AI health summary of the system
-  synergy explain <service> [--model <name>] [--verbose]  Explain what's happening with a service
-  synergy diagnose <service> [--model <name>] [--verbose] Alias for 'explain'
+  synergy status [--model <name>] [--fast] [--verbose]             AI health summary
+  synergy explain <service> [--model <name>] [--fast] [--verbose]  Explain a service
+  synergy diagnose <service> [--model <name>] [--fast] [--verbose] Alias for 'explain'
+
+Flags:
+  --fast     Smaller prompt (10 log lines, last hour only) — for CPU-only servers
+  --verbose  Show each collection step and prompt size
+  --model    Override the default model (default: {model})
 
 Examples:
   synergy status
@@ -35,6 +40,7 @@ Ollama endpoint: {url}  (override with SYNERGY_HOST env var)
 
 
 VERBOSE = False
+FAST    = False
 
 
 def vprint(msg):
@@ -77,21 +83,36 @@ def ask_ollama(prompt, model):
 
 def collect_state():
     """Collect real system state (read-only)."""
+    if FAST:
+        journal_cmd = ["journalctl", "-p", "err", "-n", "10",
+                       "--since", "1 hour ago", "--no-pager", "-o", "short"]
+    else:
+        journal_cmd = ["journalctl", "-p", "err", "-n", "30", "--no-pager", "-o", "short"]
+
     return {
         "disco":              run(["df", "-h", "/"], "disco"),
         "memoria":            run(["free", "-h"], "memoria"),
         "carga":              run(["uptime"], "carga del sistema"),
         "servicios_fallidos": run(["systemctl", "--failed", "--no-legend"], "servicios fallidos"),
-        "errores_recientes":  run(
-            ["journalctl", "-p", "err", "-n", "30", "--no-pager", "-o", "short"],
-            "errores recientes (journalctl)"
-        ),
+        "errores_recientes":  run(journal_cmd, "errores recientes (journalctl)"),
     }
 
 
 def cmd_status(model):
     s = collect_state()
-    prompt = f"""Eres un administrador de sistemas Linux senior. Analiza este estado real
+    if FAST:
+        prompt = (
+            f"Eres un sysadmin Linux. Responde en español, muy breve. "
+            f"Da: (1) salud en 1 línea, (2) alertas reales, (3) acciones. "
+            f"Solo usa los datos de abajo.\n"
+            f"DISCO: {s['disco'].strip()}\n"
+            f"RAM: {s['memoria'].strip()}\n"
+            f"CARGA: {s['carga'].strip()}\n"
+            f"FALLOS: {s['servicios_fallidos'].strip() or 'ninguno'}\n"
+            f"ERRORES: {s['errores_recientes'].strip() or 'ninguno'}\n"
+        )
+    else:
+        prompt = f"""Eres un administrador de sistemas Linux senior. Analiza este estado real
 de un servidor y responde en español, conciso. Da: (1) un resumen de salud en 1 línea,
 (2) las alertas reales que veas (disco, RAM, servicios caídos, errores), (3) acciones
 sugeridas numeradas. No inventes datos que no estén abajo.
@@ -107,7 +128,8 @@ sugeridas numeradas. No inventes datos que no estén abajo.
 === ERRORES RECIENTES (journalctl) ===
 {s['errores_recientes'] or 'ninguno'}
 """
-    print(f"Analizando estado del sistema con modelo '{model}'...\n")
+    mode = " [modo rápido]" if FAST else ""
+    print(f"Analizando estado del sistema con modelo '{model}'{mode}...\n")
     print(ask_ollama(prompt, model))
 
 
@@ -145,6 +167,9 @@ def parse_args(args):
             i += 2
         elif args[i] in ("--verbose", "-v"):
             VERBOSE = True
+            i += 1
+        elif args[i] == "--fast":
+            FAST = True
             i += 1
         else:
             remaining.append(args[i])
