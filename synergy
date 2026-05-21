@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""synergy — AI SysAdmin layer for Debian/Ubuntu.
+Local-first. Reads real system state, explains it in plain language via Ollama.
+"""
+import subprocess
+import sys
+import json
+import urllib.request
+
+MODEL = "llama3.1:8b"   # override with --model: 'qwen2.5:7b', 'mistral', etc.
+OLLAMA_URL = "http://localhost:11434/api/generate"
+
+USAGE = """\
+synergy — AI SysAdmin layer for Debian/Ubuntu (local-first, no cloud)
+
+Usage:
+  synergy status [--model <name>]             AI health summary of the system
+  synergy explain <service> [--model <name>]  Explain what's happening with a service
+  synergy diagnose <service> [--model <name>] Alias for 'explain'
+
+Examples:
+  synergy status
+  synergy explain nginx
+  synergy explain sshd --model qwen2.5:7b
+  synergy diagnose postgresql
+
+Default model : {model}
+Ollama endpoint: {url}
+""".format(model=MODEL, url=OLLAMA_URL)
+
+
+def run(cmd):
+    """Run a read-only system command and return its stdout."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout
+    except Exception as e:
+        return f"[no disponible: {e}]"
+
+
+def ask_ollama(prompt, model):
+    """Send prompt to local model. No cloud, no API keys."""
+    data = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
+    req = urllib.request.Request(
+        OLLAMA_URL, data=data, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.loads(r.read())["response"].strip()
+    except Exception as e:
+        return (
+            f"No pude contactar a Ollama en {OLLAMA_URL}.\n"
+            f"  Error: {e}\n\n"
+            "Verifica:\n"
+            "  1. ollama serve          # iniciar el servidor\n"
+            f"  2. ollama pull {model}   # descargar el modelo si no lo tienes"
+        )
+
+
+def collect_state():
+    """Collect real system state (read-only)."""
+    return {
+        "disco":              run(["df", "-h", "/"]),
+        "memoria":            run(["free", "-h"]),
+        "carga":              run(["uptime"]),
+        "servicios_fallidos": run(["systemctl", "--failed", "--no-legend"]),
+        "errores_recientes":  run(
+            ["journalctl", "-p", "err", "-n", "30", "--no-pager", "-o", "short"]
+        ),
+    }
+
+
+def cmd_status(model):
+    s = collect_state()
+    prompt = f"""Eres un administrador de sistemas Linux senior. Analiza este estado real
+de un servidor y responde en español, conciso. Da: (1) un resumen de salud en 1 línea,
+(2) las alertas reales que veas (disco, RAM, servicios caídos, errores), (3) acciones
+sugeridas numeradas. No inventes datos que no estén abajo.
+
+=== DISCO ===
+{s['disco']}
+=== MEMORIA ===
+{s['memoria']}
+=== CARGA ===
+{s['carga']}
+=== SERVICIOS FALLIDOS ===
+{s['servicios_fallidos'] or 'ninguno'}
+=== ERRORES RECIENTES (journalctl) ===
+{s['errores_recientes'] or 'ninguno'}
+"""
+    print(f"Analizando estado del sistema con modelo '{model}'...\n")
+    print(ask_ollama(prompt, model))
+
+
+def cmd_explain(service, model):
+    if not service:
+        print(
+            "Error: debes especificar el nombre del servicio.\n"
+            "Ejemplo:  synergy explain nginx"
+        )
+        sys.exit(1)
+    logs = run(["journalctl", "-u", service, "-n", "40", "--no-pager", "-o", "short"])
+    prompt = f"""Eres un administrador de sistemas Linux senior. Explica en español, claro y
+breve, qué está pasando con el servicio '{service}' según estos logs reales. Si hay un
+error, di la causa probable y cómo resolverlo. No inventes nada fuera de los logs.
+
+=== journalctl -u {service} ===
+{logs}
+"""
+    print(f"Explicando el servicio '{service}' con modelo '{model}'...\n")
+    print(ask_ollama(prompt, model))
+
+
+def parse_args(args):
+    """Extract --model flag from anywhere in argv; return remaining tokens."""
+    model = MODEL
+    remaining = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--model" and i + 1 < len(args):
+            model = args[i + 1]
+            i += 2
+        else:
+            remaining.append(args[i])
+            i += 1
+    return remaining, model
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(USAGE)
+        sys.exit(0)
+
+    remaining, model = parse_args(args)
+
+    if not remaining:
+        print(USAGE)
+        sys.exit(0)
+
+    subcmd = remaining[0]
+
+    if subcmd == "status":
+        cmd_status(model)
+    elif subcmd in ("explain", "diagnose"):
+        service = remaining[1] if len(remaining) > 1 else ""
+        cmd_explain(service, model)
+    else:
+        print(f"Comando no reconocido: '{subcmd}'\n")
+        print(USAGE)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
