@@ -73,11 +73,14 @@ Tested on a VirtualBox VM — **no GPU, CPU-only inference**:
 | Model | Mode | Prompt size | Time | Quality |
 |---|---|---|---|---|
 | qwen2.5:0.5b | `--fast` | 849 chars | ~1.5 min | ❌ hallucinations, dangerous suggestions |
+| gemma2:2b | `--fast` | 549 chars | ~47s | ❌ empty response, missed all alerts |
+| gemma3:4b | `--fast` | 1106 chars | ~8m 45s | ⚠️ decent, slower than llama3.1:8b |
 | llama3.1:8b | normal | 2366 chars | ~10 min | ✅ accurate |
-| llama3.1:8b | `--fast` | 705 chars | ~6 min | ✅ accurate |
+| llama3.1:8b | `--fast` | 705 chars | ~6 min | ✅ best so far |
 
-**Verdict**: `llama3.1:8b --fast` is the sweet spot for CPU-only servers.
-Model size matters more than prompt size for this use case — do not go below 7-8B parameters.
+**Verdict**: `llama3.1:8b --fast` is the current sweet spot for CPU-only servers.
+Model size matters more than prompt size — do not go below 7-8B parameters.
+Tests with `phi4-mini`, `qwen3:4b` and `deepseek-r1:7b` pending.
 
 ### Sample output (`llama3.1:8b --fast`)
 
