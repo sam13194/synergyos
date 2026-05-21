@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import json
+import time
 import urllib.request
 
 MODEL       = "llama3.1:8b"   # override with --model: 'qwen2.5:7b', 'mistral', etc.
@@ -61,16 +62,21 @@ def run(cmd, label=None):
 def ask_ollama(prompt, model):
     """Send prompt to local model. No cloud, no API keys."""
     vprint(f"[prompt] {len(prompt)} caracteres → {OLLAMA_URL}")
-    vprint(f"[modelo] {model} — esperando respuesta...")
     data = json.dumps({"model": model, "prompt": prompt, "stream": False}).encode()
     req = urllib.request.Request(
         OLLAMA_URL, data=data, headers={"Content-Type": "application/json"}
     )
     try:
+        t_start = time.time()
+        vprint(f"[inicio] {time.strftime('%H:%M:%S')} — esperando respuesta...")
         with urllib.request.urlopen(req, timeout=600) as r:
             response = json.loads(r.read())
-            vprint(f"[listo] {response.get('eval_count', '?')} tokens generados")
-            return response["response"].strip()
+        t_end = time.time()
+        elapsed = t_end - t_start
+        mins, secs = divmod(int(elapsed), 60)
+        vprint(f"[fin]    {time.strftime('%H:%M:%S')} — {response.get('eval_count', '?')} tokens generados")
+        vprint(f"[tiempo] {mins}m {secs}s")
+        return response["response"].strip()
     except Exception as e:
         return (
             f"No pude contactar a Ollama en {OLLAMA_URL}.\n"
