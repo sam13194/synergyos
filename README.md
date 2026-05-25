@@ -70,17 +70,20 @@ Tested on a VirtualBox VM — **no GPU, CPU-only inference**:
 - RAM: 11 GB
 - GPU: none
 
-| Model | Mode | Prompt size | Time | Quality |
-|---|---|---|---|---|
-| qwen2.5:0.5b | `--fast` | 849 chars | ~1.5 min | ❌ hallucinations, dangerous suggestions |
-| gemma2:2b | `--fast` | 549 chars | ~47s | ❌ empty response, missed all alerts |
-| gemma3:4b | `--fast` | 1106 chars | ~8m 45s | ⚠️ decent, slower than llama3.1:8b |
-| llama3.1:8b | normal | 2366 chars | ~10 min | ✅ accurate |
-| llama3.1:8b | `--fast` | 705 chars | ~6 min | ✅ best so far |
+| Model | Mode | Prompt size | Time | Tokens | Quality |
+|---|---|---|---|---|---|
+| qwen2.5:0.5b | `--fast` | 849 chars | ~1.5 min | 72 | ❌ hallucinations, dangerous suggestions |
+| gemma2:2b | `--fast` | 549 chars | ~47s | 44 | ❌ empty response, missed all alerts |
+| phi4-mini | `--fast` | 547 chars | ~2m 34s | 38 | ⚠️ fast, caught disk alert, missed PAM error |
+| gemma3:4b | `--fast` | 1106 chars | ~8m 45s | 141 | ⚠️ decent, slower than llama3.1:8b |
+| gemma4:e2b | `--fast` | 2039 chars | >10 min | — | ❌ OOM on CPU, 7.2 GB too heavy without GPU |
+| llama3.1:8b | normal | 2366 chars | ~10 min | 127 | ✅ accurate |
+| llama3.1:8b | `--fast` | 705 chars | ~6 min | 127 | ✅ best so far |
 
 **Verdict**: `llama3.1:8b --fast` is the current sweet spot for CPU-only servers.
 Model size matters more than prompt size — do not go below 7-8B parameters.
-Tests with `phi4-mini`, `qwen3:4b` and `deepseek-r1:7b` pending.
+Avoid multimodal models (gemma4) on CPU — their effective size is much larger than the parameter count suggests.
+Tests with `qwen3:4b` and `deepseek-r1:7b` pending.
 
 ### Sample output (`llama3.1:8b --fast`)
 
@@ -158,6 +161,36 @@ them remotely via SSH and analyze the output locally with Ollama.
 **Only the AI node needs synergy + Ollama.** Managed servers need nothing installed —
 just SSH enabled, which every Linux server already has. One 8 GB node monitors
 your entire fleet.
+
+---
+
+## Backends & privacy
+
+By default, SynergyOS runs **fully local** through Ollama. In this mode no system
+data — logs, hostnames, IPs, config — ever leaves the machine. This is the
+recommended mode and the reason the project exists.
+
+A future **optional cloud backend** (for low-resource servers that can't run a 7B+
+model locally, e.g. a 2 GB VPS) is on the roadmap. It will not be the default and
+must be enabled explicitly. When that lands, these rules apply:
+
+- **Opt-in only.** Cloud inference is never used unless the operator turns it on.
+- **Sanitization first.** Before any text is sent off-machine, a redaction layer
+  strips IPs, hostnames, usernames, file paths, emails, and token-like strings,
+  replacing them with placeholders. Less context leaves the box, and it also cuts
+  token usage.
+- **Free tiers are not safe for client data.** Several providers (e.g. Google AI
+  Studio's free tier) reserve the right to train on submitted content, and some
+  block EU/UK traffic entirely. SynergyOS will warn against using free tiers on
+  any server holding third-party data. Use a paid tier (which excludes training)
+  or stay local.
+- **Local stays the default, always.** Cloud is a fallback for constrained
+  hardware, never a requirement.
+
+The honest tradeoff: a 2 GB server can't run a reliable local model (anything below
+7B hallucinates — see the test table above). For those, the realistic options are
+the hub-and-spoke model below (analyze on a bigger node over SSH) or an opt-in,
+sanitized, paid cloud backend. We document the tradeoff rather than hide it.
 
 ---
 
